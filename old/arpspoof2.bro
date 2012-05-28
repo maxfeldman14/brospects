@@ -1,6 +1,5 @@
-##! Analysis of ARPSPOOF Traffic.
-##! This script logs ARPSPOOF traffic while doing so builds an internal ARPSPOOF cache
-##! that can be used to determine when MAC/IP associations change.
+##! Analysis of ARP Traffic.
+##! This script logs info relating to unsolicited ARP replies
 #
 # Abbreviations are taken from RFC 826:
 #
@@ -12,42 +11,47 @@
 
 @load base/frameworks/notice
 
-module ARPSPOOF;
+module ARPSPOOF2;
 
 export {
        redef enum Log::ID += { LOG };
 
        redef enum Notice::Type += {
                Addl_MAC_Mapping,                # another MAC->addr seen beyond just one
-               Bad_ARPSPOOF_Packet,                        # bad arp packet received
+               Bad_ARP_Packet,                        # bad arp packet received
                Cache_Inconsistency,                # MAC/addr pair seen in request/reply different
-                                               # from that in the ARPSPOOF_cache
+                                               # from that in the ARP_cache
                Mapping_Changed,                # reply gives different value than previously seen
                Source_MAC_Mismatch,                # source MAC doesn't match mappings
                Unsolicited_Reply                # could be poisoning; or just gratuitous
        };
 
        type Info: record {
+               # Information regarding solely unsolicited responses
                ts:                time                &log;
-               ## The requestor's MAC address.
-               src_mac:        string                &log &optional;
-               ## The requestor's IP address, if known. This is populated based
-               ## on ARPSPOOF traffic seen to this point.
+               ## The MAC address of the host which sent the response
+               src_mac:        string                &log;
+               ## The IP address of the host which sent the response
                src_addr:        addr                &log &optional;
-               ## The responder's MAC address.
-               dst_mac:        string                &log &optional;
-               ## The responder's IP address, if known. This is populated based
-               ## on ARPSPOOF traffic seen to this point.
+               ## The MAC address of the recipient of the unsolicited reply
+               dst_mac:        string                &log;
+               ## The IP address of the recipient of the unsolicited reply
                dst_addr:        addr                &log &optional;
-               ## Flag to indicate that a response was unsolicited
-               unsolicited:        bool                &log &default=F;
-               ## Flag to indicate that a response was never received
-               no_resp:        bool                &log &default=F;
-               ## The IP address that is requested in the ARPSPOOF request
-               who_has:        addr                &log &optional;
-               ## The assocaited MAC address from the ARPSPOOF response
-               is_at:                string                &log &optional;
+               ## Flag to indicate that the unsolicited response changed an
+               ## existing arp entry 
+               mapping_changed:        bool                &log &default=F;
+               ## Flag to indicate that this response resulted in an ARP
+               ## cache inconsistency, ie. it results in one MAC address
+               ## corresponding to >1 IP address
+               cache_inconsistency:        bool                &log &default=F;
+               ## Flag to indicate that this unsolicited response occured within
+               ## a certain time threshold
+               within_thresh:       bool                &log &default=F;
+               ## Number of unsolicited responses the sender of this response
+               ## has sent up to this point
+               num_unsolicited:        count                &log &optional;  
        };
+
 
        global log_arp: event(rec: Info);
 }
@@ -63,11 +67,18 @@ type State: record {
        requests:        table[string, addr, addr] of Info
                            &create_expire = 1 min
                            &expire_func = expired_request;
+
 };
 global arp_states: table[string] of State;
 
-# ARPSPOOF responses we've seen: indexed by IP address, yielding MAC address.
-global ARPSPOOF_cache: table[addr] of string;
+# ARP responses we've seen: indexed by IP address, yielding MAC address.
+global ARP_cache: table[addr] of string;
+
+
+# this will keep track of unsolicited responses from the same SHA and SPA to the same THA
+global unsolicited_responses: table[string, addr, string] of bool &create_expire = 16 min;
+# this will keep track of the total number of the unsolicited responses sent by a given MAC
+global counts: table[string] of count;
 
 # A somewhat general notion of broadcast MAC/IP addresses
 const broadcast_mac_addrs = { "00:00:00:00:00:00", "ff:ff:ff:ff:ff:ff", };
@@ -102,7 +113,7 @@ function addr_from_mac(mac_addr: string): string
        }
 
 # Completes an Info record by populating the src and dst IP addresses, if
-# known, and logs the ARPSPOOF traffic via the Log framework
+# known, and logs the ARP traffic via the Log framework
 function log_request(rec: Info)
        {
        if ( rec$src_mac in arp_states )
@@ -111,10 +122,10 @@ function log_request(rec: Info)
        if ( rec$dst_mac in arp_states )
                rec$dst_addr = arp_states[rec$dst_mac]$ip_addr;
 
-       Log::write(ARPSPOOF::LOG, rec);
+       Log::write(ARPSPOOF2::LOG, rec);
        }
 
-# Expiration function which is called when a ARPSPOOF request does not receive
+# Expiration function which is called when a ARP request does not receive
 # a valid response within the expiration timeout period.
 function expired_request(t: table[string, addr, addr] of Info, idx: any): interval
        {
@@ -124,17 +135,18 @@ function expired_request(t: table[string, addr, addr] of Info, idx: any): interv
 
        [SHA, SPA, TPA] = idx;
        local request = t[SHA, SPA, TPA];
-       request$no_resp = T;
-
-       log_request(request);
+       #request$no_resp = T;
+       # don't need to set to expired
+       # don't need to log requests
+       #log_request(request);
 
        return 0 sec;
        }
 
 # Create association between MAC address and an IP address. This is *not* an
-# association advertised in an ARPSPOOF reply (those are tracked in ARPSPOOF_cache), but
+# association advertised in an ARP reply (those are tracked in ARP_cache), but
 # instead the pairing of hardware address + protocol address as expressed in
-# an ARPSPOOF request or reply header.
+# an ARP request or reply header.
 function mac_addr_association(mac_addr: string, a: addr)
        {
 
@@ -148,30 +160,31 @@ function mac_addr_association(mac_addr: string, a: addr)
        local arp_state = arp_states[mac_addr];
 
        # Determine if MAC has more than 1 associated IP.
-       if ( a !in arp_state$assoc_ips && |arp_state$assoc_ips| > 0 )
+       if ( a !in arp_state$assoc_ips && |arp_state$assoc_ips| > 0 ) 
                NOTICE([$note=Addl_MAC_Mapping, $src=a,
                        $msg=fmt("Additional mapping for MAC address %s found", mac_addr)]);
-
+       
        arp_state$ip_addr = a;
        add arp_state$assoc_ips[a];
 
-       if ( a in ARPSPOOF_cache && ARPSPOOF_cache[a] != mac_addr )
+       if ( a in ARP_cache && ARP_cache[a] != mac_addr ) {
                NOTICE([$note=Cache_Inconsistency, $src=a,
-                       $msg=fmt("Mapping for %s to %s doesn't match cache of %s", mac_addr, a, ARPSPOOF_cache[a])]);
+                       $msg=fmt("Mapping for %s to %s doesn't match cache of %s", mac_addr, a, ARP_cache[a])]);
+       }
        }
 
 event bro_init() &priority=5
        {
-       Log::create_stream(ARPSPOOF::LOG, [$columns=Info, $ev=log_arp]);
+       Log::create_stream(ARPSPOOF2::LOG, [$columns=Info, $ev=log_arp]);
        }
 
-# Bad ARPSPOOFs can occur when:
+# Bad ARPs can occur when:
 #         - type/size pairs are not OK for HW and L3 addresses (Ethernet=6, IP=4)
 #         - opcode is neither request (1) nor reply (2)
-#         - MAC src address != ARPSPOOF sender MAC address
+#         - MAC src address != ARP sender MAC address
 event bad_arp(SPA: addr, SHA: string, TPA: addr, THA: string, explanation: string)
        {
-       NOTICE([$note=Bad_ARPSPOOF_Packet, $src=SPA,
+       NOTICE([$note=Bad_ARP_Packet, $src=SPA,
                $msg=fmt("Bad-arp %s(%s) ? %s(%s): %s", SPA, SHA, TPA, THA, explanation)]);
        }
 
@@ -189,10 +202,10 @@ event arp_request(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA:
                        $msg=fmt("%s -> %s who-has %s",
                                addr_from_mac(mac_src), addr_from_mac(mac_dst), TPA)]);
 
-       # Create new ARPSPOOF request and store in state record
+       # Create new ARP request and store in state record
        local request = new_arp_request(mac_src, mac_dst);
-       request$who_has = TPA;
-
+       #request$who_has = TPA;
+       # removed who_has field
        arp_state$requests[SHA, SPA, TPA] = request;
        }
 
@@ -203,36 +216,55 @@ event arp_reply(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA: a
 
        local arp_state: State;
        arp_state = arp_states[THA];
+       local mapping_changed: bool;
+       local cache_inconsistency: bool;
 
        local msg = fmt("%s -> %s: %s is-at %s",
                addr_from_mac(mac_src), addr_from_mac(mac_dst), SPA, SHA);
 
-       # Check for source mac mismatch
-       local mismatch = SHA != mac_src;
-       if ( mismatch )
-               NOTICE([$note=Source_MAC_Mismatch, $src=SPA, $msg=msg]);
 
        # Check if reply is unsolicited and get request record
        local request: Info;
        if ( [THA, TPA, SPA] !in arp_state$requests ) {
+               ## We now know that this reply is unsolicited
                request = new_arp_request(THA, SHA);
-               request$unsolicited = T;
-
+               #request$unsolicited = T;
+               # removed unsolicited field
                NOTICE([$note=Unsolicited_Reply, $src=SPA,
                        $msg=fmt("%s: request[%s, %s, %s]", msg, THA, TPA, SPA)]);
+               # now must- update count for this SHA
+               # check if this is within the threshold time (ie. [SHA, SPA, THA] in unsolicited)
+               if ( [SHA, SPA, THA] in unsolicited_responses ){
+                       request$within_thresh = T;
+               }
+               # adjust the count of SHA
+               if ( SHA in counts ) {
+                       counts[SHA] += 1;
+               } else {
+                       counts[SHA] = 1;
+               }
+               request$num_unsolicited = counts[SHA];
+               # check if this unsolicited reply has changed a mapping
+               mapping_changed = SPA in ARP_cache && ARP_cache[SPA] != SHA;
+               if ( mapping_changed ) {
+                       NOTICE([$note=Mapping_Changed, $src=SPA,
+                               $msg=fmt("%s: was %s", msg, ARP_cache[SPA])]);
+                       request$mapping_changed = T;
+               }
+               # check if this unsolicited reply has resulted in a cache
+               # inconsistency
+               if ( SPA in ARP_cache && ARP_cache[SPA] != SHA ) {
+                       # there is a cache inconsistency. notice raised in
+                       # mac_addr_association if applicable
+                       request$cache_inconsistency = T;
+               }
+               log_request(request);               
        } else {
                request = arp_state$requests[THA, TPA, SPA];
                delete arp_state$requests[THA, TPA, SPA];
        }
-       request$is_at = SHA;
-
-       # Check reply against current ARPSPOOF_cache
-       local mapping_changed = SPA in ARPSPOOF_cache && ARPSPOOF_cache[SPA] != SHA;
-       if ( mapping_changed )
-               NOTICE([$note=Mapping_Changed, $src=SPA,
-                       $msg=fmt("%s: was %s", msg, ARPSPOOF_cache[SPA])]);
-
-       log_request(request);
-
-       ARPSPOOF_cache[SPA] = SHA;
+       #request$is_at = SHA;
+       # removed is_at field
+       # notices at this point are not needed for info on unsolicited arps
+       ARP_cache[SPA] = SHA;
        }

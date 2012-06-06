@@ -17,7 +17,8 @@ module ARPSPOOF;
 export {
       redef enum Log::ID += { LOG };
 
-      # Only raise notices related to ARP spoofing
+      # Should raise notice only for unsolicited replies (spoofing)
+      # TODO: do the above
       redef enum Notice::Type += {
               Addl_MAC_Mapping,                # another MAC->addr seen beyond just one
               Bad_ARP_Packet,                        # bad arp packet received
@@ -28,26 +29,29 @@ export {
               Unsolicited_Reply                # could be poisoning; or just gratuitous
       };
 
+      # TODO: collect the information from the arp.bro script
+      # possible to do, and has the info necessary to indentify potential attack
       type Info: record {
-              ts:                time                &log;
+              #all the logging info
+              ts:                time              #  &log;
               ## The requestor's MAC address.
-              src_mac:        string                &log &optional;
+              src_mac:        string              #  &log &optional;
               ## The requestor's IP address, if known. This is populated based
               ## on ARP traffic seen to this point.
-              src_addr:        addr                &log &optional;
+              src_addr:        addr              #  &log &optional;
               ## The responder's MAC address.
-              dst_mac:        string                &log &optional;
+              dst_mac:        string              #  &log &optional;
               ## The responder's IP address, if known. This is populated based
               ## on ARP traffic seen to this point.
-              dst_addr:        addr                &log &optional;
+              dst_addr:        addr              #  &log &optional;
               ## Flag to indicate that a response was unsolicited
-              unsolicited:        bool                &log &default=F;
+              unsolicited:        bool             #  &log &default=F;
               ## Flag to indicate that a response was never received
-              no_resp:        bool                &log &default=F;
+              no_resp:        bool              #  &log &default=F;
               ## The IP address that is requested in the ARP request
-              who_has:        addr                &log &optional;
+              who_has:        addr              #  &log &optional;
               ## The assocaited MAC address from the ARP response
-              is_at:                string                &log &optional;
+              is_at:                string              #  &log &optional;
       };
 
       type Spoofer: record {
@@ -183,7 +187,7 @@ function mac_addr_association(mac_addr: string, a: addr)
 
 event bro_init() &priority=5
       {
-      Log::create_stream(ARPSPOOF::LOG, [$columns=Info, $ev=log_arp]);
+      Log::create_stream(ARPSPOOF::LOG, [$columns=Spoofer, $ev=log_arp]);
       }
 
 # Bad ARPs can occur when:

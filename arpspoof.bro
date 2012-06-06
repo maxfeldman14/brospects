@@ -67,7 +67,7 @@ export {
 
 
 
-      global log_arp: event(rec: Unsolicited);
+      global log_arp: event(rec: Spoofer);
 }
 
 redef capture_filters += { ["arp"] = "arp" };
@@ -85,7 +85,7 @@ type State: record {
 global arp_states: table[string] of State;
 
 #unsolicited replies will hold all unsolicited replies from all hosts
-global unsolicited_replies: table[string] of vector of Unsocilited;
+global spoofers: table[string] of Spoofer;
 
 # ARP responses we've seen: indexed by IP address, yielding MAC address.
 global ARP_cache: table[addr] of string;

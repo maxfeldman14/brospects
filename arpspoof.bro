@@ -136,7 +136,8 @@ function log_request(rec: Info)
       if ( rec$dst_mac in arp_states )
               rec$dst_addr = arp_states[rec$dst_mac]$ip_addr;
 
-      Log::write(ARPSPOOF::LOG, rec);
+      # only need to log spoofers on bro_end
+      # Log::write(ARPSPOOF::LOG, rec);
       }
 
 # Expiration function which is called when a ARP request does not receive
@@ -253,8 +254,19 @@ event arp_reply(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA: a
               request = new_arp_request(THA, SHA);
               request$unsolicited = T;
 
-              NOTICE([$note=Unsolicited_Reply, $src=SPA,
-                      $msg=fmt("%s: request[%s, %s, %s]", msg, THA, TPA, SPA)]);
+              # SHA is the "actual" address of the sender
+              # spoofers[SHA] can be created or updated
+              # TODO: check if it exists already, if yes:
+              # increment count
+              # else, create it
+              if ( SHA in spoofers ) {
+                  spoofers[SHA]$replies_count + = 1; # valid?
+              }
+
+
+
+             #  NOTICE([$note=Unsolicited_Reply, $src=SPA,
+             #         $msg=fmt("%s: request[%s, %s, %s]", msg, THA, TPA, SPA)]);
       } else {
               request = arp_state$requests[THA, TPA, SPA];
               delete arp_state$requests[THA, TPA, SPA];

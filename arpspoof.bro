@@ -17,8 +17,7 @@ module ARPSPOOF;
 export {
       redef enum Log::ID += { LOG };
 
-      # Should raise notice only for unsolicited replies (spoofing)
-      # TODO: do the above
+      # TODO: Should raise notice only for unsolicited replies (spoofing)
       redef enum Notice::Type += {
               Addl_MAC_Mapping,                # another MAC->addr seen beyond just one
               Bad_ARP_Packet,                        # bad arp packet received
@@ -30,7 +29,7 @@ export {
       };
 
       # TODO: collect the information from the arp.bro script
-      # possible to do, and has the info necessary to indentify potential attack
+      # possible to do, and has the info necessary to indentify potential attack 
       type Info: record {
               #all the logging info
               ts:                time              #  &log;
@@ -64,9 +63,8 @@ export {
               ## Does this sender have multiple IPs associated with
               ## its MAC?
               multiple_ips:        bool        &log &default=F;
-              ## The IPs which this host has claimed
-              ## Only populated if multiple_ips==T
-              ips:        vector        &log;
+              ## The IP(s) which this host has claimed
+              ips:        set        &log;
       };
 
 
@@ -109,6 +107,18 @@ function new_arp_request(mac_src: string, mac_dst: string): Info
       return request;
       }
 
+# Create a new Spoofer record
+function new_spoofer(mac_src: string, claimed: addr, bool: changed_mapping)
+      {
+      local spoofer: Spoofer;
+      spoofer$sender_mac = mac_src;
+      # on creation the spoofer has only spoofed once
+      spoofer$replies_count = 1;
+      spoofer$changed_mapping = changed_mapping;
+      #multiple ips starts as false
+      spoofer$multiple_ips = F;
+      spoofer$ips
+
 # Create a new state record for the given MAC address
 function new_arp_state(mac_addr: string): State
       {
@@ -119,7 +129,7 @@ function new_arp_state(mac_addr: string): State
       }
 
 # Returns the IP address associated with a MAC address, if we've seen one.
-# Otherwise just returns the MAC address/
+# Otherwise just returns the MAC address
 function addr_from_mac(mac_addr: string): string
       {
       return mac_addr in arp_states ?
@@ -261,6 +271,10 @@ event arp_reply(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA: a
               # else, create it
               if ( SHA in spoofers ) {
                   spoofers[SHA]$replies_count + = 1; # valid?
+              }
+              else {
+                  # Create spoofer
+
               }
 
 

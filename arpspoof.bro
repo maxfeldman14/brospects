@@ -1,4 +1,4 @@
-##! Analysis of ARP Traffic.
+##! Analysis of ARP Spoofing Traffic.
 ##! This script logs ARP traffic while doing so builds an internal ARP cache
 ##! that can be used to determine when MAC/IP associations change.
 #
@@ -19,12 +19,6 @@ export {
 
       # TODO: Should raise notice only for unsolicited replies (spoofing)
       redef enum Notice::Type += {
-              Addl_MAC_Mapping,                # another MAC->addr seen beyond just one
-              Bad_ARP_Packet,                        # bad arp packet received
-              Cache_Inconsistency,                # MAC/addr pair seen in request/reply different
-                                              # from that in the ARP_cache
-              Mapping_Changed,                # reply gives different value than previously seen
-              Source_MAC_Mismatch,                # source MAC doesn't match mappings
               Unsolicited_Reply                # could be poisoning; or just gratuitous
       };
 
@@ -87,6 +81,7 @@ type State: record {
 global arp_states: table[string] of State;
 
 #unsolicited replies will hold all unsolicited replies from all hosts
+#lookup a spoofer by its source addr
 global spoofers: table[string] of Spoofer;
 
 # ARP responses we've seen: indexed by IP address, yielding MAC address.
@@ -117,7 +112,10 @@ function new_spoofer(mac_src: string, claimed: addr, bool: changed_mapping)
       spoofer$changed_mapping = changed_mapping;
       #multiple ips starts as false
       spoofer$multiple_ips = F;
-      spoofer$ips
+      spoofer$ips set[addr];
+
+      return spoofer;
+      }
 
 # Create a new state record for the given MAC address
 function new_arp_state(mac_addr: string): State
@@ -249,6 +247,12 @@ event arp_reply(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA: a
       if ( mismatch )
               NOTICE([$note=Source_MAC_Mismatch, $src=SPA, $msg=msg]);
 
+      # Check reply against current ARP_cache
+      local mapping_changed = SPA in ARP_cache && ARP_cache[SPA] != SHA;
+      if ( mapping_changed )
+              NOTICE([$note=Mapping_Changed, $src=SPA,
+                      $msg=fmt("%s: was %s", msg, ARP_cache[SPA])]);
+
       # Check if reply is unsolicited and get request record
       # An unsolicited reply could indicate spoofing
 
@@ -264,20 +268,23 @@ event arp_reply(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA: a
               request = new_arp_request(THA, SHA);
               request$unsolicited = T;
 
-              # SHA is the "actual" address of the sender
+              # SHA is the "actual" address of the sender, OR IS IT mac_src?
+              # may need to switch sha and mac_src
               # spoofers[SHA] can be created or updated
-              # TODO: check if it exists already, if yes:
-              # increment count
-              # else, create it
-              if ( SHA in spoofers ) {
-                  spoofers[SHA]$replies_count + = 1; # valid?
+              # TODO: is the above true?!?!
+              # increment count else, create it
+              local spoofer: Spoofer;
+              if ( mac_src in spoofers ) {
+                  spoofer = spoofers[mac_src];
+                  spoofer$replies_count + = 1; # valid?
+                  spoofer$changed_mapping = T;
               }
               else {
-                  # Create spoofer
-
+                  # create spoofer
+                  spoofer = new_spoofer(mac_src, SHA, mapping_changed);
               }
-
-
+              # In either case, add the IP the spoofer claims to the set
+              add spoofer$ips[SPA];
 
              #  NOTICE([$note=Unsolicited_Reply, $src=SPA,
              #         $msg=fmt("%s: request[%s, %s, %s]", msg, THA, TPA, SPA)]);
@@ -285,14 +292,9 @@ event arp_reply(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA: a
               request = arp_state$requests[THA, TPA, SPA];
               delete arp_state$requests[THA, TPA, SPA];
       }
+      
+
       request$is_at = SHA;
-
-      # Check reply against current ARP_cache
-      local mapping_changed = SPA in ARP_cache && ARP_cache[SPA] != SHA;
-      if ( mapping_changed )
-              NOTICE([$note=Mapping_Changed, $src=SPA,
-                      $msg=fmt("%s: was %s", msg, ARP_cache[SPA])]);
-
       log_request(request);
 
       ARP_cache[SPA] = SHA;

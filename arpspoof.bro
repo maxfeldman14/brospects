@@ -8,7 +8,6 @@
 # SPA: source protocol address (i.e., IP address)
 # THA: target hardware address
 # TPA: target protocol address
-#
 
 @load base/frameworks/notice
 
@@ -17,34 +16,33 @@ module ARPSPOOF;
 export {
       redef enum Log::ID += { LOG };
 
-      # TODO: Should raise notice only for unsolicited replies (spoofing)
       redef enum Notice::Type += {
               Unsolicited_Reply                # could be poisoning; or just gratuitous
       };
 
       # TODO: collect the information from the arp.bro script
-      # possible to do, and has the info necessary to indentify potential attack 
+      # Possible to do, and has the info necessary to indentify potential attack 
       type Info: record {
-              #all the logging info
-              ts:                time              #  &log;
+              ## All the logging info
+              ts:                time;              #  &log;
               ## The requestor's MAC address.
-              src_mac:        string              #  &log &optional;
+              src_mac:        string;              #  &log &optional;
               ## The requestor's IP address, if known. This is populated based
               ## on ARP traffic seen to this point.
-              src_addr:        addr              #  &log &optional;
+              src_addr:        addr;              #  &log &optional;
               ## The responder's MAC address.
-              dst_mac:        string              #  &log &optional;
+              dst_mac:        string;              #  &log &optional;
               ## The responder's IP address, if known. This is populated based
               ## on ARP traffic seen to this point.
-              dst_addr:        addr              #  &log &optional;
+              dst_addr:        addr;              #  &log &optional;
               ## Flag to indicate that a response was unsolicited
-              unsolicited:        bool             #  &log &default=F;
+              unsolicited:        bool;             #  &log &default=F;
               ## Flag to indicate that a response was never received
-              no_resp:        bool              #  &log &default=F;
+              no_resp:        bool;              #  &log &default=F;
               ## The IP address that is requested in the ARP request
-              who_has:        addr              #  &log &optional;
+              who_has:        addr;              #  &log &optional;
               ## The assocaited MAC address from the ARP response
-              is_at:                string              #  &log &optional;
+              is_at:                string;              #  &log &optional;
       };
 
       type Spoofer: record {
@@ -54,11 +52,10 @@ export {
               replies_count:        count        &log &default=0;
               ## Has this sender changed a prior addr->MAC mapping?
               changed_mapping:        bool        &log &default=F;
-              ## Does this sender have multiple IPs associated with
-              ## its MAC?
+              ## Does this sender have multiple IPs associated with its MAC?
               multiple_ips:        bool        &log &default=F;
               ## The IP(s) which this host has claimed
-              ips:        set        &log;
+              ips:        set[addr]        &log;
       };
 
 
@@ -80,8 +77,8 @@ type State: record {
 };
 global arp_states: table[string] of State;
 
-#unsolicited replies will hold all unsolicited replies from all hosts
-#lookup a spoofer by its source addr
+# Unsolicited replies will hold all unsolicited replies from all hosts
+# Lookup a spoofer by its source addr
 global spoofers: table[string] of Spoofer;
 
 # ARP responses we've seen: indexed by IP address, yielding MAC address.
@@ -103,16 +100,16 @@ function new_arp_request(mac_src: string, mac_dst: string): Info
       }
 
 # Create a new Spoofer record
-function new_spoofer(mac_src: string, claimed: addr, bool: changed_mapping)
+function new_spoofer(mac_src: string, claimed: addr, changed_mapping: bool)
       {
       local spoofer: Spoofer;
       spoofer$sender_mac = mac_src;
-      # on creation the spoofer has only spoofed once
+      # On creation the spoofer has only spoofed once
       spoofer$replies_count = 1;
       spoofer$changed_mapping = changed_mapping;
-      #multiple ips starts as false
+      # At first there are no assigned ips
       spoofer$multiple_ips = F;
-      spoofer$ips set[addr];
+      spoofer$ips = {};
 
       return spoofer;
       }
@@ -144,7 +141,7 @@ function log_request(rec: Info)
       if ( rec$dst_mac in arp_states )
               rec$dst_addr = arp_states[rec$dst_mac]$ip_addr;
 
-      # only need to log spoofers on bro_end
+      # Only need to log spoofers on bro_end
       # Log::write(ARPSPOOF::LOG, rec);
       }
 
@@ -216,7 +213,7 @@ event arp_request(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA:
       local arp_state: State;
       arp_state = arp_states[SHA];
 
-      # check that ethernet src and arp src are the same
+      # Check that ethernet src and arp src are the same
       local mismatch = SHA != mac_src;
       if ( mismatch )
               NOTICE([$note=Source_MAC_Mismatch, $src=SPA,
@@ -268,11 +265,11 @@ event arp_reply(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA: a
               request = new_arp_request(THA, SHA);
               request$unsolicited = T;
 
-              # SHA is the "actual" address of the sender, OR IS IT mac_src?
-              # may need to switch sha and mac_src
-              # spoofers[SHA] can be created or updated
-              # TODO: is the above true?!?!
-              # increment count else, create it
+              # SHA is the "actual" address of the sender, 
+              # TODO: is it actually mac_src?
+              #   may need to switch sha and mac_src
+              # TODO: check if the above is true
+              # Increment count else, create it
               local spoofer: Spoofer;
               if ( mac_src in spoofers ) {
                   spoofer = spoofers[mac_src];
@@ -280,7 +277,6 @@ event arp_reply(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA: a
                   spoofer$changed_mapping = T;
               }
               else {
-                  # create spoofer
                   spoofer = new_spoofer(mac_src, SHA, mapping_changed);
               }
               # In either case, add the IP the spoofer claims to the set

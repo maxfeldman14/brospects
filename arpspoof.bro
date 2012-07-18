@@ -109,7 +109,7 @@ function new_spoofer(mac_src: string, claimed: addr, changed_mapping: bool): Spo
       spoofer$changed_mapping = changed_mapping;
       # At first there are no assigned ips
       spoofer$multiple_ips = F;
-      # spoofer$ips: set[addr] = {};
+      spoofer$ips = set(claimed);
 
       return spoofer;
       }
@@ -188,8 +188,9 @@ event bro_init() &priority=5
 
 event bro_done() &priority=5
       {
+      print "reached done";
       for (spfer in spoofers) {
-        Log::write(ARPSPOOF::LOG, spfer);
+        Log::write(ARPSPOOF::LOG, spoofers[spfer]);
         }
       }
 
@@ -251,7 +252,8 @@ event arp_reply(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA: a
               local spoofer: Spoofer;
               if ( mac_src in spoofers ) {
                   spoofer = spoofers[mac_src];
-                  spoofer$replies_count += 1; # valid?
+                  add spoofer$ips[SPA];
+                  spoofer$replies_count = |spoofer$ips|;
                   spoofer$changed_mapping = T;
               }
               else {

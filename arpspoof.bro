@@ -262,8 +262,11 @@ event arp_reply(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA: a
               # In either case, add the IP the spoofer claims to the set
               add spoofer$ips[SPA];
 
-             #  NOTICE([$note=Unsolicited_Reply, $src=SPA,
-             #         $msg=fmt("%s: request[%s, %s, %s]", msg, THA, TPA, SPA)]);
+              # testing logging on creation of spoofer
+              Log::write(ARPSPOOF::LOG, spoofer);
+
+              #  NOTICE([$note=Unsolicited_Reply, $src=SPA,
+              #         $msg=fmt("%s: request[%s, %s, %s]", msg, THA, TPA, SPA)]);
       } else {
               request = arp_state$requests[THA, TPA, SPA];
               delete arp_state$requests[THA, TPA, SPA];

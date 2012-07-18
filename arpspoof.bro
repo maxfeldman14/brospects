@@ -260,6 +260,9 @@ event arp_reply(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA: a
               # In either case, add the IP the spoofer claims to the set
               add spoofer$ips[SPA];
 
+              # Add the spoofer to spoofers
+              spoofers[mac_src] = spoofer;
+
              #  NOTICE([$note=Unsolicited_Reply, $src=SPA,
              #         $msg=fmt("%s: request[%s, %s, %s]", msg, THA, TPA, SPA)]);
       } else {

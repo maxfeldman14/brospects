@@ -17,11 +17,11 @@ export {
       redef enum Log::ID += { LOG };
 
       redef enum Notice::Type += {
-              Unsolicited_Reply                # could be poisoning; or just gratuitous
+              Unsolicited_Reply                # It could be poisoning; or just gratuitous
       };
 
       # TODO: collect the information from the arp.bro script
-      # Possible to do, and has the info necessary to indentify potential attack 
+      # instead of collecting it manually.
       type Info: record {
               ## All the logging info
               ts:                time;              #  &log;
@@ -77,18 +77,18 @@ type State: record {
 };
 global arp_states: table[string] of State;
 
-# Unsolicited replies will hold all unsolicited replies from all hosts
-# Lookup a spoofer by its source addr
+# Unsolicited replies will hold all unsolicited replies from all hosts.
+# Lookup a spoofer by its source addr.
 global spoofers: table[string] of Spoofer;
 
 # ARP responses we've seen: indexed by IP address, yielding MAC address.
 global ARP_cache: table[addr] of string;
 
-# A somewhat general notion of broadcast MAC/IP addresses
+# A somewhat general notion of broadcast MAC/IP addresses.
 const broadcast_mac_addrs = { "00:00:00:00:00:00", "ff:ff:ff:ff:ff:ff", };
 const broadcast_addrs = { 0.0.0.0, 255.255.255.255, };
 
-# Create a new arp_request record with the given src and dst fields
+# Create a new arp_request record with the given src and dst fields.
 function new_arp_request(mac_src: string, mac_dst: string): Info
       {
       local request: Info;
@@ -99,22 +99,24 @@ function new_arp_request(mac_src: string, mac_dst: string): Info
       return request;
       }
 
-# Create a new Spoofer record
+# Create a new Spoofer record.
 function new_spoofer(mac_src: string, claimed: addr, changed_mapping: bool): Spoofer
       {
       local spoofer: Spoofer;
       spoofer$sender_mac = mac_src;
-      # On creation the spoofer has only spoofed once
+      # On creation the spoofer has only spoofed once.
       spoofer$replies_count = 1;
       spoofer$changed_mapping = changed_mapping;
-      # At first there are no assigned ips
-      spoofer$multiple_ips = F;
+      # One instance of spoofing means that only one
+      # IP has been claimed. Add it to the set, and
+      # set the multiple flag to false.
       spoofer$ips = set(claimed);
+      spoofer$multiple_ips = F;
 
       return spoofer;
       }
 
-# Create a new state record for the given MAC address
+# Create a new state record for the given MAC address.
 function new_arp_state(mac_addr: string): State
       {
       local state: State;
@@ -123,8 +125,8 @@ function new_arp_state(mac_addr: string): State
       return state;
       }
 
-# Returns the IP address associated with a MAC address, if we've seen one.
-# Otherwise just returns the MAC address
+# Returns the IP address associated with a MAC address, if we've seen one,
+# otherwise just returns the MAC address.
 function addr_from_mac(mac_addr: string): string
       {
       return mac_addr in arp_states ?
@@ -132,7 +134,7 @@ function addr_from_mac(mac_addr: string): string
       }
 
 # Completes an Info record by populating the src and dst IP addresses, if
-# known, and logs the ARP traffic via the Log framework
+# known, and logs the ARP traffic via the Log framework.
 function log_request(rec: Info)
       {
       if ( rec$src_mac in arp_states )
@@ -167,11 +169,11 @@ function expired_request(t: table[string, addr, addr] of Info, idx: any): interv
 function mac_addr_association(mac_addr: string, a: addr)
       {
 
-      # Ignore broadcast and network addresses (IP and Ethernet)
+      # Ignore broadcast and network addresses (IP and Ethernet).
       if ( mac_addr in broadcast_mac_addrs || a in broadcast_addrs )
               return;
 
-      # Get state record
+      # Get state record.
       if ( mac_addr !in arp_states )
               arp_states[mac_addr] = new_arp_state(mac_addr);
       local arp_state = arp_states[mac_addr];
@@ -253,20 +255,18 @@ event arp_reply(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA: a
               if ( mac_src in spoofers ) {
                   spoofer = spoofers[mac_src];
                   add spoofer$ips[SPA];
-                  spoofer$replies_count = |spoofer$ips|;
+                  spoofer$replies_count += 1;
                   spoofer$changed_mapping = T;
               }
               else {
                   spoofer = new_spoofer(mac_src, SPA, mapping_changed);
               }
-              # In either case, add the IP the spoofer claims to the set
+              # In either case, add the IP the spoofer claims to the set.
               add spoofer$ips[SPA];
 
-              # Add the spoofer to spoofers
+              # Add the spoofer to spoofers.
               spoofers[mac_src] = spoofer;
 
-             #  NOTICE([$note=Unsolicited_Reply, $src=SPA,
-             #         $msg=fmt("%s: request[%s, %s, %s]", msg, THA, TPA, SPA)]);
       } else {
               request = arp_state$requests[THA, TPA, SPA];
               delete arp_state$requests[THA, TPA, SPA];

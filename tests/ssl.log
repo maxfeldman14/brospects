@@ -1,0 +1,10 @@
+#separator \x09
+#set_separator	,
+#empty_field	(empty)
+#unset_field	-
+#path	ssl
+#fields	ts	uid	id.orig_h	id.orig_p	id.resp_h	id.resp_p	version	cipher	server_name	session_id	subject	issuer_subject	not_valid_before	not_valid_after	last_alert
+#types	time	string	addr	port	addr	port	string	string	string	string	string	string	time	time	string
+1318670557.076819	8kKDJQi2Sq5	192.168.1.200	51173	74.125.224.104	443	TLSv10	TLS_ECDHE_RSA_WITH_RC4_128_SHA	sb-ssl.google.com	-	CN=*.google.com,O=Google Inc,L=Mountain View,ST=California,C=US	CN=Google Internet Authority,O=Google Inc,C=US	1316524032.000000	1348147032.000000	-
+1318670570.879005	vbeNnYD3WB5	192.168.1.200	60515	82.103.140.42	443	SSLv3	TLS_DHE_RSA_WITH_AES_256_CBC_SHA	-	-	CN=secure.informaction.com,OU=Domain Control Validated,O=secure.informaction.com	serialNumber=07969287,CN=Go Daddy Secure Certification Authority,OU=http://certificates.godaddy.com/repository,O=GoDaddy.com\, Inc.,L=Scottsdale,ST=Arizona,C=US	1246593274.000000	1404359674.000000	-
+1318670597.229107	jrtStOzRR2j	192.168.1.200	45848	74.125.224.44	443	TLSv10	TLS_ECDHE_RSA_WITH_RC4_128_SHA	accounts.youtube.com	-	CN=*.google.com,O=Google Inc,L=Mountain View,ST=California,C=US	CN=Google Internet Authority,O=Google Inc,C=US	1316524032.000000	1348147032.000000	-

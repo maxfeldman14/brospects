@@ -22,11 +22,6 @@ export {
 
       # TODO: collect the information from the arp.bro script
       # instead of collecting it manually.
-
-      # TODO: import DHCP information
-
-      # TODO: Handle Scapy's "arpcachepoison", which sends
-      # "who has" with spoofed SPA instead of gratuitous replies
       type Info: record {
               ## All the logging info
               ts:                time;              #  &log;
@@ -59,8 +54,17 @@ export {
               changed_mapping:        bool        &log &default=F;
               ## Does this sender have multiple IPs associated with its MAC?
               multiple_ips:        bool        &log &default=F;
+              ## Has the spoofer claimed (via ARP) an IP address not 
+              ## assigned by DHCP?
+              claimed_non_DHCP:        bool        &log &default=F;
+              ## Has the spoofer sent multiple "WHO HAS"s with the
+              ## same information?
+              many_who_has:        bool        &log &default=T;
               ## The IP(s) which this host has claimed
               ips:        set[addr]        &log;
+              ## The victim IP(s) to which a host has spoofed
+              victims:        set[addr]     &log;
+              
       };
 
 
@@ -105,7 +109,7 @@ function new_arp_request(mac_src: string, mac_dst: string): Info
       }
 
 # Create a new Spoofer record.
-function new_spoofer(mac_src: string, claimed: addr, changed_mapping: bool): Spoofer
+function new_spoofer(mac_src: string, claimed: addr, vic: addr, changed_mapping: bool): Spoofer
       {
       local spoofer: Spoofer;
       spoofer$sender_mac = mac_src;
@@ -116,6 +120,7 @@ function new_spoofer(mac_src: string, claimed: addr, changed_mapping: bool): Spo
       # IP has been claimed. Add it to the set, and
       # set the multiple flag to false.
       spoofer$ips = set(claimed);
+      spoofer$victims = set(vic);
       spoofer$multiple_ips = F;
 
       return spoofer;
@@ -251,27 +256,22 @@ event arp_reply(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA: a
               request = new_arp_request(THA, SHA);
               request$unsolicited = T;
 
-              # SHA is the address claimed in the ARP packet
-              # mac_src is the actual address, from the
-              # ethernet packet.
-              
-              # It is worth noting that SHA should == mac_src
-              # because a gratuitous ARP will need to spoof
-              # SPA, not SHA, to trick a victim
-
+              # SHA is the "actual" address of the sender, 
+              # TODO: is it actually mac_src?
+              #   may need to switch sha and mac_src
+              # TODO: check if the above is true
               # Increment count else, create it
               local spoofer: Spoofer;
               if ( mac_src in spoofers ) {
                   spoofer = spoofers[mac_src];
                   add spoofer$ips[SPA];
+                  add spoofer$victims[TPA];
                   spoofer$replies_count += 1;
                   spoofer$changed_mapping = T;
               }
               else {
-                  spoofer = new_spoofer(mac_src, SPA, mapping_changed);
+                  spoofer = new_spoofer(mac_src, SPA, TPA, mapping_changed);
               }
-              # In either case, add the IP the spoofer claims to the set.
-              add spoofer$ips[SPA];
 
               # Add the spoofer to spoofers.
               spoofers[mac_src] = spoofer;

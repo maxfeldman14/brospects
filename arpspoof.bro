@@ -22,6 +22,11 @@ export {
 
       # TODO: collect the information from the arp.bro script
       # instead of collecting it manually.
+
+      # TODO: import DHCP information
+
+      # TODO: Handle Scapy's "arpcachepoison", which sends
+      # "who has" with spoofed SPA instead of gratuitous replies
       type Info: record {
               ## All the logging info
               ts:                time;              #  &log;
@@ -246,10 +251,14 @@ event arp_reply(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA: a
               request = new_arp_request(THA, SHA);
               request$unsolicited = T;
 
-              # SHA is the "actual" address of the sender, 
-              # TODO: is it actually mac_src?
-              #   may need to switch sha and mac_src
-              # TODO: check if the above is true
+              # SHA is the address claimed in the ARP packet
+              # mac_src is the actual address, from the
+              # ethernet packet.
+              
+              # It is worth noting that SHA should == mac_src
+              # because a gratuitous ARP will need to spoof
+              # SPA, not SHA, to trick a victim
+
               # Increment count else, create it
               local spoofer: Spoofer;
               if ( mac_src in spoofers ) {

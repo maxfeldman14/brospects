@@ -231,8 +231,8 @@ event arp_request(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA:
       local mapping_changed = SPA in ARP_cache && ARP_cache[SPA] != SHA;
 
       # Check requests to see if this same request has
-      # been sent in the past minute, which may indicate
-      # an attack
+      # been sent in the past minute. Multiple redundant ARP
+      # requests may be the sign of a spoofer
 
       if [SHA, SPA, TPA] in arp_state$requests {
         # May be an attack, so find or create a spoofer

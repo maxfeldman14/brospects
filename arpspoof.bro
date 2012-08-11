@@ -22,6 +22,13 @@ export {
 
       # TODO: collect the information from the arp.bro script
       # instead of collecting it manually.
+      # Possible types of spoofing:
+      # gratuitous arp replies
+      # spoofed claimed IP in who_has
+      # spoofed mac with real IP in who_has
+      # TODO: check claimed IP and mac against DHCP
+      # TODO: see if a spoofer is sending many who_has requests
+      # with the same information
       type Info: record {
               ## All the logging info
               ts:                time;              #  &log;
@@ -220,6 +227,28 @@ event arp_request(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA:
       local request = new_arp_request(mac_src, mac_dst);
       request$who_has = TPA;
 
+      # Check reply against current ARP_cache
+      local mapping_changed = SPA in ARP_cache && ARP_cache[SPA] != SHA;
+
+      # Check requests to see if this same request has
+      # been sent in the past minute, which may indicate
+      # an attack
+
+      if [SHA, SPA, TPA] in arp_state$requests {
+        # May be an attack, so find or create a spoofer
+        local spoofer: Spoofer;
+        if ( mac_src in spoofers ) {
+            spoofer = spoofers[mac_src];
+            add spoofer$ips[SPA];
+            add spoofer$victims[TPA];
+            spoofer$replies_count += 1;
+            spoofer$changed_mapping = T;
+        }
+        else {
+            spoofer = new_spoofer(mac_src, SPA, TPA, mapping_changed);
+        }
+
+      }
       arp_state$requests[SHA, SPA, TPA] = request;
       }
 
@@ -256,11 +285,14 @@ event arp_reply(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA: a
               request = new_arp_request(THA, SHA);
               request$unsolicited = T;
 
+              # SHA is the ARP packet's mac addr of the sender
+              # mac_src is the ethernet packet's mac
               # SHA is the "actual" address of the sender, 
               # TODO: is it actually mac_src?
               #   may need to switch sha and mac_src
               # TODO: check if the above is true
               # Increment count else, create it
+
               local spoofer: Spoofer;
               if ( mac_src in spoofers ) {
                   spoofer = spoofers[mac_src];

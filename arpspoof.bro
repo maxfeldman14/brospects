@@ -57,6 +57,8 @@ export {
               sender_mac:        string        &log;
               ## The number of unsolicited replies this sender sent
               replies_count:        count        &log &default=0;
+              ## The number of redundant requests this sender sent
+              requests_count:        count        &log &default=0;
               ## Has this sender changed a prior addr->MAC mapping?
               changed_mapping:        bool        &log &default=F;
               ## Does this sender have multiple IPs associated with its MAC?
@@ -90,6 +92,10 @@ type State: record {
       requests:        table[string, addr, addr] of Info
                           &create_expire = 1 min
                           &expire_func = expired_request;
+      spoofed_reqs:    table[string, addr, addr] of Info
+      # Can tweak expire time to adjust granularity of
+      # attack inspection.
+                          &create_expire = 5 sec;
 };
 global arp_states: table[string] of State;
 
@@ -121,7 +127,6 @@ function new_spoofer(mac_src: string, claimed: addr, vic: addr, changed_mapping:
       local spoofer: Spoofer;
       spoofer$sender_mac = mac_src;
       # On creation the spoofer has only spoofed once.
-      spoofer$replies_count = 1;
       spoofer$changed_mapping = changed_mapping;
       # One instance of spoofing means that only one
       # IP has been claimed. Add it to the set, and
@@ -207,7 +212,6 @@ event bro_init() &priority=5
 
 event bro_done() &priority=5
       {
-      print "reached done";
       for (spfer in spoofers) {
         Log::write(ARPSPOOF::LOG, spoofers[spfer]);
         }
@@ -234,18 +238,22 @@ event arp_request(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA:
       # been sent in the past minute. Multiple redundant ARP
       # requests may be the sign of a spoofer
 
-      if [SHA, SPA, TPA] in arp_state$requests {
+      # TODO: add another table where arp requests aren't removed
+      # current problem: this arp request is removed once it is answered,
+      # but the next spoofed request occurs after that
+      if ( [SHA, SPA, TPA] in arp_state$requests ) {
         # May be an attack, so find or create a spoofer
         local spoofer: Spoofer;
         if ( mac_src in spoofers ) {
             spoofer = spoofers[mac_src];
             add spoofer$ips[SPA];
             add spoofer$victims[TPA];
-            spoofer$replies_count += 1;
+            spoofer$requests_count += 1;
             spoofer$changed_mapping = T;
         }
         else {
             spoofer = new_spoofer(mac_src, SPA, TPA, mapping_changed);
+            spoofer$requests_count = 1;
         }
 
       }
@@ -281,16 +289,13 @@ event arp_reply(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA: a
       # succession)
 
       local request: Info;
-      if ( [THA, TPA, SPA] !in arp_state$requests ) {
+      if ( [THA, TPA, SPA] !in arp_state$spoofed_reqs ) {
               request = new_arp_request(THA, SHA);
               request$unsolicited = T;
 
               # SHA is the ARP packet's mac addr of the sender
               # mac_src is the ethernet packet's mac
               # SHA is the "actual" address of the sender, 
-              # TODO: is it actually mac_src?
-              #   may need to switch sha and mac_src
-              # TODO: check if the above is true
               # Increment count else, create it
 
               local spoofer: Spoofer;
@@ -303,6 +308,7 @@ event arp_reply(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA: a
               }
               else {
                   spoofer = new_spoofer(mac_src, SPA, TPA, mapping_changed);
+                  spoofer$replies_count = 1;
               }
 
               # Add the spoofer to spoofers.

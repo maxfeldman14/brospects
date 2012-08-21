@@ -48,3 +48,10 @@ two conversing buddies. [My blog][fb-chat-post] contains a bit more details
 about this script.
 
 [fb-chat-post]: http://matthias.vallentin.net/blog/2011/06/analyzing-facebook-webchat-sessions-with-bro/
+
+arpspoof.bro
+------------
+
+This script analyzes ARP traffic for gratuitous replies, spoofed fields in
+replies, and spoofed fields in requests, as well as conflicts with existing
+entries in the ARP table and DHCP assignments.

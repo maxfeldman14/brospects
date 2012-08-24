@@ -57,7 +57,7 @@ export {
               sender_mac:        string        &log;
               ## The number of unsolicited replies this sender sent
               replies_count:        count        &log &default=0;
-              ## The number of redundant requests this sender sent, beyond 5
+              ## The number of redundant requests this sender sent
               requests_count:        count        &log &default=0;
               ## Has this sender changed a prior addr->MAC mapping?
               changed_mapping:        bool        &log &default=F;
@@ -82,6 +82,7 @@ export {
 }
 
 redef capture_filters += { ["arp"] = "arp" };
+redef capture_filters += { ["dhcp"] = "dhcp" };
 
 global expired_request: function(t: table[string, addr, addr] of Info, idx: any): interval &redef;
 
@@ -92,13 +93,10 @@ type State: record {
       requests:        table[string, addr, addr] of Info
                           &create_expire = 1 min
                           &expire_func = expired_request;
-      # Keep track of all requests and don't delete them
-      # in order to identify hosts sending many duplicate
-      # requests
-      spoofed_reqs:    table[string, addr, addr] of count;
-      # Can have requests expire to ensure only redundant
-      # requests in rapid succession are tracked
-      #                    &create_expire = 5 sec;
+      spoofed_reqs:    table[string, addr, addr] of count 
+      # Can tweak expire time to adjust granularity of
+      # attack inspection.
+                          &create_expire = 5 sec;
 };
 global arp_states: table[string] of State;
 
@@ -241,31 +239,35 @@ event arp_request(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA:
       # been sent in the past minute. Multiple redundant ARP
       # requests may be the sign of a spoofer
 
+      # TODO: add another table where arp requests aren't removed
+      # current problem: this arp request is removed once it is answered,
+      # but the next spoofed request occurs after that
       if ( [SHA, SPA, TPA] in arp_state$spoofed_reqs) {
-        arp_state$spoofed_reqs[SHA, SPA, TPA] += 1;
+        
         if (arp_states$spoofed_reqs[SHA, SPA, TPA] > 5) {
-          # SHA has sent the same request at least 6 times
+          # May be an attack, so find or create a spoofer
           local spoofer: Spoofer;
           if ( mac_src in spoofers ) {
-            spoofer = spoofers[mac_src];
-            add spoofer$ips[SPA];
-            add spoofer$victims[TPA];
-            # Reflect the number of redundant requests beyond
-            # the first 5
-            spoofer$requests_count += 1;
-            spoofer$changed_mapping = T;
+              spoofer = spoofers[mac_src];
+              add spoofer$ips[SPA];
+              add spoofer$victims[TPA];
+              spoofer$requests_count += 1;
+              spoofer$changed_mapping = T;
           }
           else {
-            spoofer = new_spoofer(mac_src, SPA, TPA, mapping_changed);
-            spoofer$requests_count = 1;
+              spoofer = new_spoofer(mac_src, SPA, TPA, mapping_changed);
+              spoofer$requests_count = 1;
           }
         }
+      }
+      arp_state$requests[SHA, SPA, TPA] = request;
+      if ([SHA, SPA, TPA] in arp_state$spoofed_reqs) {
+        arp_state$spoofed_reqs[SHA, SPA, TPA] += 1;
       }
       else {
         arp_state$spoofed_reqs[SHA, SPA, TPA] = 0;
       }
-
-      arp_state$requests[SHA, SPA, TPA] = request;
+        
       }
 
 event arp_reply(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA: addr, THA: string)
@@ -297,7 +299,7 @@ event arp_reply(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA: a
       # succession)
 
       local request: Info;
-      if ( [THA, TPA, SPA] !in arp_state$requests ) {
+      if ( [THA, TPA, SPA] !in arp_state$spoofed_reqs ) {
               request = new_arp_request(THA, SHA);
               request$unsolicited = T;
 

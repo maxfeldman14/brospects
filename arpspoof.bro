@@ -27,7 +27,6 @@ export {
       # spoofed claimed IP in who_has
       # spoofed mac with real IP in who_has
       # TODO: check claimed IP and mac against DHCP
-      # TODO: see if a spoofer is sending many who_has requests
       # with the same information
       type Info: record {
               ## All the logging info
@@ -64,7 +63,7 @@ export {
               ## Does this sender have multiple IPs associated with its MAC?
               multiple_ips:        bool        &log &default=F;
               ## Has the spoofer claimed (via ARP) an IP address not 
-              ## assigned by DHCP?
+              ## assigned to it by DHCP?
               claimed_non_DHCP:        bool        &log &default=F;
               ## Has the spoofer sent multiple "WHO HAS"s with the
               ## same information?
@@ -107,6 +106,9 @@ global spoofers: table[string] of Spoofer;
 # ARP responses we've seen: indexed by IP address, yielding MAC address.
 global ARP_cache: table[addr] of string;
 
+# Mapping of MAC address to IP as assigned by DHCP
+global DHCP_state: table[string] of addr;
+
 # A somewhat general notion of broadcast MAC/IP addresses.
 const broadcast_mac_addrs = { "00:00:00:00:00:00", "ff:ff:ff:ff:ff:ff", };
 const broadcast_addrs = { 0.0.0.0, 255.255.255.255, };
@@ -135,7 +137,10 @@ function new_spoofer(mac_src: string, claimed: addr, vic: addr, changed_mapping:
       spoofer$ips = set(claimed);
       spoofer$victims = set(vic);
       spoofer$multiple_ips = F;
-
+      # Check if there is a conflict with DHCP mapping
+      if (mac_src in DHCP_state && claimed != DHCP_state[mac_src]) {
+        spoofer$claimed_non_DHCP = T;
+      }
       return spoofer;
       }
 
@@ -212,9 +217,7 @@ event bro_init() &priority=5
       }
 
 event bro_done() &priority=5
-      {
-      for (spfer in spoofers) {
-        Log::write(ARPSPOOF::LOG, spoofers[spfer]);
+      { for (spfer in spoofers) { Log::write(ARPSPOOF::LOG, spoofers[spfer]);
         }
       }
 
@@ -239,9 +242,6 @@ event arp_request(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA:
       # been sent in the past minute. Multiple redundant ARP
       # requests may be the sign of a spoofer
 
-      # TODO: add another table where arp requests aren't removed
-      # current problem: this arp request is removed once it is answered,
-      # but the next spoofed request occurs after that
       if ( [SHA, SPA, TPA] in arp_state$spoofed_reqs) {
         
         if (arp_states$spoofed_reqs[SHA, SPA, TPA] > 5) {
@@ -334,4 +334,11 @@ event arp_reply(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA: a
       log_request(request);
 
       ARP_cache[SPA] = SHA;
+      }
+
+event dhcp_ack(c: connection, msg: dhcp_msg, mask: addr, router: dhcp_router_list, lease: interval, serv_addr: addr)
+      {
+          # Store info from the DHCP acknowledgment, to create a mapping between SHA and assigned IP
+          DHCP_state[client_mac] = client_addr;
+          print(dhcp_msg);
       }

@@ -84,6 +84,7 @@ redef capture_filters += { ["arp"] = "arp" };
 redef capture_filters += { ["dhcp"] = "dhcp" };
 
 global expired_request: function(t: table[string, addr, addr] of Info, idx: any): interval &redef;
+global decrement_spoofed: function(t: table[string, addr, addr] of count, idx: any): interval &redef;
 
 type State: record {
       mac_addr:        string;
@@ -94,8 +95,10 @@ type State: record {
                           &expire_func = expired_request;
       spoofed_reqs:    table[string, addr, addr] of count 
       # Can tweak expire time to adjust granularity of
-      # attack inspection.
-                          &create_expire = 5 sec;
+      # attack inspection. Larger time results in more
+      # redundant requests being considered malicious
+                          &create_expire = 15 sec;
+                          &expire_func = decrement_spoofed;
 };
 global arp_states: table[string] of State;
 
@@ -186,6 +189,20 @@ function expired_request(t: table[string, addr, addr] of Info, idx: any): interv
       request$no_resp = T;
 
       log_request(request);
+
+      return 0 sec;
+      }
+
+# Expiration function called to keep potentially spoofed requests time-local
+# in order to increase confidence in an attacker continuously sending many
+# redundant requests in the same time frame. Spoofed requests can come in at
+# any frequency, but every <expiration> seconds the count will be decremented.
+function decrement_spoofed(t: table[string, addr, addr] of Info, idx: any): interval
+      {
+      local SHA: string;
+      local SPA: addr;
+      local TPA: addr;
+      arp_states[SHA]$spoofed_reqs[SHA, SPA, TPA] -= 1;
 
       return 0 sec;
       }
@@ -339,6 +356,6 @@ event arp_reply(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA: a
 event dhcp_ack(c: connection, msg: dhcp_msg, mask: addr, router: dhcp_router_list, lease: interval, serv_addr: addr)
       {
           # Store info from the DHCP acknowledgment, to create a mapping between SHA and assigned IP
-          DHCP_state[client_mac] = client_addr;
-          print(dhcp_msg);
+          # TODO: check this syntax
+          DHCP_state[dhcp_msg$clisrc] = dhcp_msg$cliaddr;
       }

@@ -357,5 +357,5 @@ event dhcp_ack(c: connection, msg: dhcp_msg, mask: addr, router: dhcp_router_lis
       {
           # Store info from the DHCP acknowledgment, to create a mapping between SHA and assigned IP
           # TODO: check this syntax
-          DHCP_state[dhcp_msg$clisrc] = dhcp_msg$cliaddr;
+          DHCP_state[dhcp_msg$h_addr] = dhcp_msg$yiaddr;
       }

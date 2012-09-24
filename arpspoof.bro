@@ -261,7 +261,7 @@ event arp_request(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA:
 
       if ( [SHA, SPA, TPA] in arp_state$spoofed_reqs) {
         
-        if (arp_states$spoofed_reqs[SHA, SPA, TPA] > 5) {
+        if (arp_state$spoofed_reqs[SHA, SPA, TPA] > 5) {
           # May be an attack, so find or create a spoofer
           local spoofer: Spoofer;
           if ( mac_src in spoofers ) {

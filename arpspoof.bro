@@ -97,7 +97,7 @@ type State: record {
       # Can tweak expire time to adjust granularity of
       # attack inspection. Larger time results in more
       # redundant requests being considered malicious
-                          &create_expire = 15 sec;
+                          &create_expire = 15 sec
                           &expire_func = decrement_spoofed;
 };
 global arp_states: table[string] of State;

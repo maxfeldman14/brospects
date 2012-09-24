@@ -84,7 +84,7 @@ redef capture_filters += { ["arp"] = "arp" };
 redef capture_filters += { ["dhcp"] = "dhcp" };
 
 global expired_request: function(t: table[string, addr, addr] of Info, idx: any): interval &redef;
-global decrement_spoofed: function(t: table[string, addr, addr] of count, idx: any): interval &redef;
+# global decrement_spoofed: function(t: table[string, addr, addr] of count, idx: any): interval &redef;
 
 type State: record {
       mac_addr:        string;
@@ -94,11 +94,11 @@ type State: record {
                           &create_expire = 1 min
                           &expire_func = expired_request;
       spoofed_reqs:    table[string, addr, addr] of count 
+                          &create_expire = 15 sec;
       # Can tweak expire time to adjust granularity of
       # attack inspection. Larger time results in more
       # redundant requests being considered malicious
-                          &create_expire = 15 sec
-                          &expire_func = decrement_spoofed;
+                          # &expire_func = decrement_spoofed;
 };
 global arp_states: table[string] of State;
 

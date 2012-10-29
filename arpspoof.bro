@@ -23,11 +23,9 @@ export {
       # TODO: collect the information from the arp.bro script
       # instead of collecting it manually.
       # Possible types of spoofing:
-      # gratuitous arp replies
-      # spoofed claimed IP in who_has
-      # spoofed mac with real IP in who_has
-      # TODO: check claimed IP and mac against DHCP
-      # with the same information
+      #   gratuitous arp replies
+      #   spoofed claimed IP in who_has
+      #   spoofed MAC address with real IP in who_has
       type Info: record {
               ## All the logging info
               ts:                time;              #  &log;
@@ -95,9 +93,9 @@ type State: record {
                           &expire_func = expired_request;
       spoofed_reqs:    table[string, addr, addr] of count 
                           &create_expire = 15 sec;
-      # Can tweak expire time to adjust granularity of
-      # attack inspection. Larger time results in more
-      # redundant requests being considered malicious
+      # These times can be tweaked to adjust the granularity of attack
+      # inspection. Larger time results in more redundant requests 
+      # being considered malicious
                           # &expire_func = decrement_spoofed;
 };
 global arp_states: table[string] of State;
@@ -323,7 +321,7 @@ event arp_reply(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA: a
               # SHA is the ARP packet's mac addr of the sender
               # mac_src is the ethernet packet's mac
               # SHA is the "actual" address of the sender, 
-              # Increment count else, create it
+              # Increment the count if it exists, otherwise, create the record.
 
               local spoofer: Spoofer;
               if ( mac_src in spoofers ) {
@@ -356,6 +354,5 @@ event arp_reply(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA: a
 event dhcp_ack(c: connection, msg: dhcp_msg, mask: addr, router: dhcp_router_list, lease: interval, serv_addr: addr)
       {
           # Store info from the DHCP acknowledgment, to create a mapping between SHA and assigned IP
-          # TODO: check this syntax
           DHCP_state[dhcp_msg$h_addr] = dhcp_msg$yiaddr;
       }

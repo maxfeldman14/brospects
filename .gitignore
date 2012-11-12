@@ -2,4 +2,4 @@
 .*.swo
 pcaps/*
 tests/*
-
+tmp/*

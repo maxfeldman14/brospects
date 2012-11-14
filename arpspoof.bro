@@ -112,7 +112,7 @@ global DHCP_state: table[string] of addr;
 
 # A somewhat general notion of broadcast MAC/IP addresses.
 const broadcast_mac_addrs = { "00:00:00:00:00:00", "ff:ff:ff:ff:ff:ff", };
-const broadcast_addrs = { 0.0.0.0, 255.255.255.255, };
+const broadcast_addrs = { 255.255.255.255, };
 
 # Create a new arp_request record with the given src and dst fields.
 function new_arp_request(mac_src: string, mac_dst: string): Info
@@ -314,7 +314,7 @@ event arp_reply(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA: a
       # succession)
 
       local request: Info;
-      if ( [THA, TPA, SPA] !in arp_state$spoofed_reqs ) {
+      if ( [THA, TPA, SPA] !in arp_state$requests ) {
               request = new_arp_request(THA, SHA);
               request$unsolicited = T;
 

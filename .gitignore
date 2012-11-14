@@ -3,3 +3,5 @@
 pcaps/*
 tests/*
 tmp/*
+.state/*
+.state

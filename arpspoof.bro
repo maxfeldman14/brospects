@@ -112,7 +112,7 @@ global DHCP_state: table[string] of addr;
 
 # A somewhat general notion of broadcast MAC/IP addresses.
 const broadcast_mac_addrs = { "00:00:00:00:00:00", "ff:ff:ff:ff:ff:ff", };
-const broadcast_addrs = { 255.255.255.255, };
+const broadcast_addrs = { 0.0.0.0, 255.255.255.255, };
 
 # Create a new arp_request record with the given src and dst fields.
 function new_arp_request(mac_src: string, mac_dst: string): Info
@@ -238,6 +238,10 @@ event bro_done() &priority=5
 
 event arp_request(mac_src: string, mac_dst: string, SPA: addr, SHA: string, TPA: addr, THA: string)
       {
+      if ( SPA == 0.0.0.0 )
+      {
+          return;
+      }
       mac_addr_association(SHA, SPA);
 
       local arp_state: State;
